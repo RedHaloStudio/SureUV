@@ -17,14 +17,6 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     action: StringProperty(name="String Value")
-    size: FloatProperty(name="Size", default=1.0, precision=4)
-    rot: FloatVectorProperty(name="XYZ Rotation")
-    offset: FloatVectorProperty(name="XYZ offset", precision=4)
-
-    zrot: FloatProperty(name="Z rotation", default=0.0)
-    xoffset: FloatProperty(name="X offset", default=0.0, precision=4)
-    yoffset: FloatProperty(name="Y offset", default=0.0, precision=4)
-    texaspect: FloatProperty(name="Texture aspect", default=1.0, precision=4)
     
     reset_size: BoolProperty(name="Reset Size")
     reset_xoffset: BoolProperty(name="Reset X Offset")
@@ -35,12 +27,38 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
 
     reset_texaspect: BoolProperty(name="Reset Aspect")
     guess_texaspect: BoolProperty(name="Guess Aspect")
+    size: FloatProperty(name="Size", default=1.0, precision=4)
+    
+    rot: FloatVectorProperty(name="XYZ Rotation")
+    offset: FloatVectorProperty(name="XYZ offset", precision=4)
+
+    zrot: FloatProperty(name="Z rotation", default=0.0)
+    xoffset: FloatProperty(name="X offset", default=0.0, precision=4)
+    yoffset: FloatProperty(name="Y offset", default=0.0, precision=4)
+    texaspect: FloatProperty(name="Texture aspect", default=1.0, precision=4)
 
     flag_cw: BoolProperty()
     flag_ccw: BoolProperty()
     flag_zero: BoolProperty()
 
+    align_x : BoolProperty()
+    align_y : BoolProperty()
+    align_z : BoolProperty()
+    
     def draw(self, context):
+        obj = bpy.context.object
+        settings = obj.redhalo_uv_settings
+        
+        self.size = settings.size
+        self.rot = settings.rot
+        self.offset = settings.offset
+        
+        self.zrot = settings.zrot
+        self.xoffset = settings.xoffset
+        self.yoffset = settings.yoffset
+
+        self.texaspect = settings.texaspect
+
         if self.action == 'bestplanar':
             # self.action = 'bestplanar'
             layout = self.layout
@@ -75,14 +93,20 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
 
         elif self.action == 'box':          
             layout = self.layout
-            layout.label(text="Size")
             row = layout.row()
             row.prop(self,'size', text="")
             row.prop(self,'reset_size', icon="LOOP_BACK", text="")
 
             row = layout.row()
-            row.label(text="XYZ rotation")
+            row.label(text="XYZ rotation") 
             row.prop(self,'reset_xyz_rot',text="", icon="LOOP_BACK")
+            
+            row = layout.row()       
+            row.label(text="Quick Align")
+            row.prop(self,"align_x", text="X")
+            row.prop(self,"align_y", text="Y")
+            row.prop(self,"align_z", text="Z")
+
             layout.prop(self,'rot', text="")
 
             row = layout.row()
@@ -98,6 +122,7 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
 
 
     def act(self, context):
+        settings = context.object.redhalo_uv_settings
         if self.flag_cw:
             self.zrot += 45
             self.zrot = self.zrot if self.zrot <= 360.0 else self.zrot - 360.0
@@ -115,30 +140,52 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
         if self.reset_size:
             self.reset_size = False
             self.size = 1.0
+            settings.size = 1.0
 
         if self.reset_xoffset:
             self.reset_xoffset = False
             self.xoffset = 0.0
+            settings.xoffset = 0.0
 
         if self.reset_yoffset:
             self.reset_yoffset = False
             self.yoffset = 0.0
+            settings.yoffset = 0.0
 
         if self.reset_xyz_offset:
             self.reset_xyz_offset = False
             self.offset = (0.0,0.0,0.0)
+            settings.offset = (0.0,0.0,0.0)
 
         if self.reset_xyz_rot:
             self.reset_xyz_rot = False
             self.rot = (0.0,0.0,0.0)
+            settings.rot = (0.0,0.0,0.0)
 
         if self.reset_texaspect:
             self.reset_texaspect = False
             self.texaspect = 1.0
+            settings.texaspect = 1.0
 
         if self.guess_texaspect:
             self.guess_texaspect = False
-            self.texaspect = context.scene.sure_uv_settings.texaspect
+            # self.texaspect = context.scene.sure_uv_settings.texaspect
+            self.texaspect = settings.texaspect
+
+        if self.align_x:
+            self.align_x = False
+            self.rot = (90, 90, 90)
+            settings.rot = (90, 90, 90)
+
+        if self.align_y:
+            self.align_y = False
+            self.rot = (90, 0, 0)
+            settings.rot = (90, 0, 0)
+
+        if self.align_z:
+            self.align_z = False
+            self.rot = (0, 0, 0)
+            settings.rot = (0, 0, 0)
 
         if self.action == 'bestplanar':
             self.best_planar_map()
@@ -159,7 +206,6 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
                 for space in area.spaces:
                     if space.type == 'VIEW_3D':
                         space.shading.type = 'MATERIAL'
-    
 
     def invoke(self, context, event):
         # print('-- INVOKE --')
@@ -167,29 +213,47 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
         # print(self.texaspect)
 
         self.act(context)
-            
+        
         # print('-- finish invoke --')
         return {'FINISHED'}
 
     def execute(self, context):
-        scene = bpy.context.scene
-        settings = scene.sure_uv_settings
+        AllDatas = {}
+        for i in bpy.context.selected_objects:
+            AllDatas[i.data.name] = i.name
+        
+            # for i in AllDatas.values():
+            # obj = bpy.context.object
+            # obj = bpy.data.objects[i]
+            settings = i.redhalo_uv_settings
 
-        # self.report({'INFO'}, 'S: {0}'.format(self.action))
-        # print('Action:', self.action)
+            settings.size = self.size
+            settings.rot = self.rot
+            settings.offset = self.offset
+            
+            settings.zrot = self.zrot
+            settings.xoffset = self.xoffset
+            settings.yoffset = self.yoffset
 
+            settings.texaspect = self.texaspect
+
+            # self.report({'INFO'}, 'S: {0}'.format(self.action))
+            # print('Action:', self.action)
+        
         self.act(context)
+        
         return {'FINISHED'}
 
     def box_map(self):
-        scene = bpy.context.scene
-        sure = scene.sure_uv_settings
+        obj = bpy.context.object
+        settings = obj.redhalo_uv_settings
         # print('** Boxmap **')
         AllDatas = {}
         for i in bpy.context.selected_objects:
             AllDatas[i.data.name] = i.name
 
         for i in AllDatas.values():
+
             obj = bpy.data.objects[i]
             mesh = obj.data
 
@@ -204,29 +268,29 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
                 uvtex = bpy.ops.mesh.uv_texture_add()
             uvtex = mesh.uv_layers.active
 
-            aspect = self.texaspect
+            aspect = settings.texaspect
 
             #
             # Main action
             #
             obj_sc = obj.scale
             
-            if self.size:
-                sc = 1.0/self.size
+            if settings.size:
+                sc = 1.0/settings.size
             else:
-                sc = 1.0   
+                sc = 1.0
 
-            sx = 1 * sc
-            sy = 1 * sc
-            sz = 1 * sc
+            sx = 1 * sc * obj_sc[0]
+            sy = 1 * sc * obj_sc[1]
+            sz = 1 * sc * obj_sc[2]
 
-            ofx = self.offset[0]
-            ofy = self.offset[1]
-            ofz = self.offset[2]
+            ofx = settings.offset[0]
+            ofy = settings.offset[1]
+            ofz = settings.offset[2]
 
-            rx = self.rot[0] / 180 * pi
-            ry = self.rot[1] / 180 * pi
-            rz = self.rot[2] / 180 * pi
+            rx = settings.rot[0] / 180 * pi
+            ry = settings.rot[1] / 180 * pi
+            rz = settings.rot[2] / 180 * pi
             
             crx = cos(rx)
             srx = sin(rx)
@@ -257,6 +321,11 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
             
             ofxsrz = ofx * srz
             ofycrz = ofy * crz
+
+            # Add Custom property
+            # obj.sure_uv_props.sureuv_offset = (ofx, ofy, ofz)
+            # obj.sure_uv_props.sureuv_rotate = (self.rot[0], self.rot[1], self.rot[2])
+            # obj.sure_uv_props.sureuv_scale = 1 / sc
             
             #uvs = mesh.uv_loop_layers[mesh.uv_loop_layers.active_index].data
             uvs = mesh.uv_layers.active.data
@@ -296,6 +365,7 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
                                 uvs[loop].uv[0] =  -y * srz - x * crz                   + ofxcrz - ofysrz
                                 uvs[loop].uv[1] =   y * aspect * crz - x * aspect * srz - ofxsrz - ofycrz
             
+
             # Back to EDIT Mode
             if is_editmode:
                 bpy.ops.object.mode_set(mode='EDIT', toggle=False)
@@ -329,6 +399,8 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
             #
             # Main action
             #
+            obj_sc = obj.scale
+
             if self.size:
                 sc = 1.0/self.size
             else:
@@ -346,9 +418,9 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
             q = v.rotation_difference(zv)
                     
 
-            sx = 1 * sc
-            sy = 1 * sc
-            sz = 1 * sc
+            sx = 1 * sc * obj_sc[0]
+            sy = 1 * sc * obj_sc[1]
+            sz = 1 * sc * obj_sc[2]
             ofx = self.xoffset
             ofy = self.yoffset
             rz = self.zrot / 180 * pi
@@ -370,6 +442,11 @@ class OBJECT_OT_SureUVOperator(bpy.types.Operator):
                         z = co.z * sz
                         uvs[loop].uv[0] =  x * cosrz - y * sinrz + self.xoffset
                         uvs[loop].uv[1] =  aspect*(- x * sinrz - y * cosrz) + self.yoffset
+
+            # Add Custom property
+            obj.sure_uv_props.sureuv_offset = (ofx, ofy, 0)
+            obj.sure_uv_props.sureuv_rotate = (0, 0, self.zrot)
+            obj.sure_uv_props.sureuv_scale = 1 / sc
 
             # Back to EDIT Mode
             if is_editmode:
