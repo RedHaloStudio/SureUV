@@ -1,4 +1,5 @@
-简易UVW贴图修改器 SureUV
+# 简易UVW贴图修改器
+# SureUV BOX UVW Mapping Modifier
 
 原始地址：https://blenderartists.org/t/simple-box-uvw-map-modifier/524479
 
